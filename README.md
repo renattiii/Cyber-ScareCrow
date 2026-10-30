@@ -6,7 +6,7 @@ CyberScarecrow makes a Windows machine look like a malware analyst's lab by runn
 
 Many opportunistic malware families enumerate running processes or window titles and bail out when they see analysis tools. CyberScarecrow gives them something to see.
 
-![CyberScarecrow armed](docs/screenshot.png)
+![CyberScarecrow main window](docs/screenshot.png)
 
 > It is a deterrent, not a sandbox or antivirus. It does not inspect files, network traffic, or other processes.
 
@@ -18,6 +18,8 @@ Many opportunistic malware families enumerate running processes or window titles
 - **Never touches real tools** — if a process with the same name is already running, that decoy is skipped and marked **Already running**. Only processes started by CyberScarecrow are ever stopped.
 - **Guaranteed cleanup** — decoys are assigned to a Windows Job Object with kill-on-close, and the decoy host watches its manager. If CyberScarecrow exits or crashes, the decoys go with it.
 - **Small footprint** — the decoy host is a ~130 KB native Win32 executable, not a .NET runtime per process.
+- **Optional deep disguise** — copies decoys to per-user install paths and launches them as Explorer children, behind an explicit warning. Off by default.
+- **Fullscreen auto-pause** — disarms automatically when a fullscreen app is in the foreground, so anti-cheat checks don't see debugger names.
 - **Optional tray + autostart** — minimize to the tray, or start hidden and armed at login.
 
 ## Quick start
@@ -59,13 +61,38 @@ Keep both files together. `CyberScarecrow.Host.exe` is the native process that g
 
 ## How it works
 
-1. The app copies the native host to `%LOCALAPPDATA%\CyberScarecrow\decoys\<tool>\<process>.exe`.
+1. The app copies the native host to `%LOCALAPPDATA%\CyberScarecrow\decoys\<tool>\<process>.exe`, or to `%LOCALAPPDATA%\Programs\<tool>\<process>.exe` when deep disguise is enabled.
 2. It launches the host with environment variables for the window title, window class, and manager PID.
 3. The host creates a visible-but-offscreen top-level window with the requested title/class and pumps messages. The window is in `IsWindowVisible` but not in the taskbar or Alt-Tab.
 4. Each decoy is assigned to a Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`. The host also watches the manager PID as a second line of defense.
-5. On disarm or exit, only the PIDs started by CyberScarecrow are terminated. Real tools are never touched.
+5. With deep disguise on, the manager creates the decoy with `PROC_THREAD_ATTRIBUTE_PARENT_PROCESS`, so its parent is `explorer.exe` instead of CyberScarecrow.
+6. On disarm or exit, only the PIDs started by CyberScarecrow are terminated, and the copied decoy files are removed. Real tools are never touched.
 
 No DLL injection, no hooks, no network activity, no file scanning.
+
+## Deep disguise
+
+Deep disguise is **off by default**. Enable **Deep disguise** in the footer; the first time, CyberScarecrow shows a warning explaining exactly what changes. The **what it does** link next to the checkbox reopens that explanation at any time.
+
+![Deep disguise warning](docs/deep-disguise-warning.png)
+
+When enabled:
+
+- Decoy files are copied to `%LOCALAPPDATA%\Programs\<tool>\<process>.exe` so they look like per-user installations.
+- Decoys are launched as if started by `explorer.exe`, instead of by `CyberScarecrow.exe`.
+- Decoy files are removed when you disarm or exit. Stale files from a crash are removed on the next launch.
+- If a real per-user installation already exists at the target path, CyberScarecrow does **not** overwrite it. That decoy falls back to the app's private decoy folder.
+
+It does **not** spoof:
+
+- Digital signatures or publisher metadata
+- File version resources
+- Loaded modules, handles, or named pipes
+- Kernel drivers, services, or VM/hardware artifacts
+
+Deep disguise can defeat malware that checks install paths or parent processes. It will not fool anything that checks signatures, version resources, loaded modules, kernel components, or VM artifacts. Determined malware and anti-cheat software can still detect it.
+
+> Do not arm CyberScarecrow while playing a game with anti-cheat. The decoys look like debuggers by design. **Pause in fullscreen** helps, but it is best-effort.
 
 ## Decoy catalog
 
@@ -116,8 +143,8 @@ No DLL injection, no hooks, no network activity, no file scanning.
 
 ## Limitations
 
-- **Name and title checks only.** CyberScarecrow does not spoof digital signatures, install paths, loaded modules, handles, or VM/sandbox artifacts.
-- **Determined malware can spot it.** The host is unsigned, lives under `%LOCALAPPDATA%`, and has an unusual parent process. Sophisticated samples may notice.
+- **Name, title, path, and parent checks.** CyberScarecrow does not spoof digital signatures, version metadata, loaded modules, handles, kernel drivers, or VM/sandbox artifacts.
+- **Determined malware can spot it.** The host is unsigned, lives under `%LOCALAPPDATA%`, and even with deep disguise its publisher metadata is not the real vendor. Sophisticated samples may notice.
 - **Anti-cheat and EDR false positives are possible.** Decoys look exactly like the tools they impersonate. Close CyberScarecrow before launching games with anti-cheat, and do not disable security software to make it work.
 - **Not a security boundary.** Keep your antivirus, patches, backups, and safe browsing habits. This is a scare tactic, not protection.
 
@@ -128,7 +155,9 @@ No DLL injection, no hooks, no network activity, no file scanning.
 - No persistence unless **Start with Windows** is enabled. That writes one value to `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`:
   `"<path>\CyberScarecrow.exe" --minimized --arm`
 - Settings live in `%LOCALAPPDATA%\CyberScarecrow\config.json`.
-- Decoy files live in `%LOCALAPPDATA%\CyberScarecrow\decoys\`.
+- Decoy files live in `%LOCALAPPDATA%\CyberScarecrow\decoys\`, or `%LOCALAPPDATA%\Programs\<tool>\` when deep disguise is enabled.
+- Decoy files are removed on disarm or exit. Stale files from a crash are cleaned on the next launch. CyberScarecrow only deletes files whose hash matches its own host binary, so it never removes a real tool.
+- Deep disguise is opt-in and shows a warning the first time it is enabled.
 
 ## Uninstall
 
@@ -141,6 +170,8 @@ No DLL injection, no hooks, no network activity, no file scanning.
 Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'CyberScarecrow' -ErrorAction SilentlyContinue
 ```
 
+Decoy files under `%LOCALAPPDATA%\Programs\<tool>\` are removed automatically when you disarm or exit. If the app crashed, start it once and disarm, or delete only the decoy files whose hash matches `CyberScarecrow.Host.exe` — never delete a folder that contains a real tool installation.
+
 ## Troubleshooting
 
 | Problem | Fix |
@@ -150,6 +181,9 @@ Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' 
 | **A decoy says "Already running"** | A real process with that name is running. CyberScarecrow skips it and will not stop it. |
 | **Antivirus/EDR alert** | Unsigned placeholder processes with debugger names can look suspicious. Don't disable protection; only add an exclusion if you understand the tradeoff. |
 | **Game anti-cheat complains** | Close CyberScarecrow before gaming. The decoys look like debuggers by design. |
+| **Decoys stopped unexpectedly** | **Pause in fullscreen** disarms when a fullscreen app is foreground. Re-arm when you're done, or turn the option off. |
+| **Deep disguise didn't apply** | A real per-user install already exists at the target path. CyberScarecrow falls back to its private decoy folder and never overwrites it. |
+| **Deep disguise warning keeps appearing** | It only appears the first time. Use **what it does** next to the checkbox to read the explanation again. |
 | **Windows SmartScreen warning** | The app is unsigned. Use **More info → Run anyway** if you trust the build, or build it yourself from source. |
 | **Start with Windows stopped working** | The app moved. Toggle the setting off and on to rewrite the path. |
 
@@ -175,9 +209,13 @@ Command-line flags:
 | `--minimized` | Start hidden in the tray. |
 | `--arm` | Arm the selected decoys on launch. |
 | `--smoke-test` | Headless integration check. Starts three decoys for ~2 seconds and writes a report to `%TEMP%\cyberscarecrow-smoke.txt`. |
+| `--smoke-test --deep` | Same check with deep disguise enabled; also reports decoy paths, parent PIDs, and cleanup. |
 
 ```powershell
 .\dist\CyberScarecrow.exe --smoke-test
+Get-Content "$env:TEMP\cyberscarecrow-smoke.txt"
+
+.\dist\CyberScarecrow.exe --smoke-test --deep
 Get-Content "$env:TEMP\cyberscarecrow-smoke.txt"
 ```
 
@@ -185,4 +223,6 @@ Get-Content "$env:TEMP\cyberscarecrow-smoke.txt"
 
 - **Off-screen windows:** window-title checks can find the decoy, but the window sits at `(-32000, -32000)` with `WS_EX_TOOLWINDOW`, so it stays out of the taskbar, Alt-Tab, and your way.
 - **Native host:** a single tiny Win32 binary is copied under each decoy name. Twenty decoys cost a few MB each, not twenty .NET runtimes.
+- **Deep disguise:** per-user paths under `%LOCALAPPDATA%\Programs`, plus `PROC_THREAD_ATTRIBUTE_PARENT_PROCESS` so the decoy's parent is `explorer.exe`. The manager still owns the process handle and job object, so cleanup is unchanged.
+- **Safe cleanup:** copied files are deleted only when their SHA-256 matches the host binary. A real tool at the same path is never overwritten or removed.
 - **Job object:** if the manager is killed from Task Manager, Windows closes the job handle and terminates the decoys automatically.

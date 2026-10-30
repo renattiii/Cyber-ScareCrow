@@ -22,6 +22,8 @@ internal sealed class MainForm : Form
     private readonly PillLabel _headerPill = new();
     private readonly CheckBox _startWithWindows = new();
     private readonly CheckBox _minimizeToTray = new();
+    private readonly CheckBox _deepDisguise = new();
+    private readonly CheckBox _pauseOnFullscreen = new();
     private readonly NotifyIcon _tray = new();
     private readonly ToolStripMenuItem _trayToggle = new();
     private readonly System.Windows.Forms.Timer _timer = new();
@@ -32,6 +34,15 @@ internal sealed class MainForm : Form
     private bool _reallyExit;
     private bool _balloonShown;
     private bool _cleanedUp;
+    private IntPtr _lastFullscreenWindow;
+
+    private const string DeepDisguiseExplanation =
+        "Deep disguise changes how decoys are deployed:\n\n" +
+        "• Decoy files are copied to %LOCALAPPDATA%\\Programs\\<tool>\\ so they look like per-user installs.\n" +
+        "• Decoys are launched as if started by Explorer, instead of by CyberScarecrow.\n" +
+        "• Decoy files are removed when you disarm or exit.\n\n" +
+        "It does not spoof digital signatures, version metadata, loaded modules, kernel drivers, or VM artifacts. Determined malware and anti-cheat software can still detect it.\n\n" +
+        "Do not arm while playing anti-cheat games.";
 
     public MainForm(bool startMinimized, bool autoArm)
     {
@@ -45,7 +56,7 @@ internal sealed class MainForm : Form
         LoadConfigIntoUi();
 
         _timer.Interval = 1500;
-        _timer.Tick += (_, _) => RefreshStatuses();
+        _timer.Tick += OnTimerTick;
         _timer.Start();
 
         Shown += OnShown;
@@ -56,8 +67,8 @@ internal sealed class MainForm : Form
         SuspendLayout();
 
         Text = "CyberScarecrow";
-        ClientSize = new Size(920, 720);
-        MinimumSize = new Size(840, 660);
+        ClientSize = new Size(920, 744);
+        MinimumSize = new Size(840, 684);
         StartPosition = FormStartPosition.CenterScreen;
         BackColor = Theme.Background;
         Font = new Font("Segoe UI", 9F);
@@ -89,7 +100,7 @@ internal sealed class MainForm : Form
         root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 116F));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 52F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 80F));
         Controls.Add(root);
 
         root.Controls.Add(BuildHeader(), 0, 0);
@@ -393,31 +404,80 @@ internal sealed class MainForm : Form
         {
             Dock = DockStyle.Fill,
             BackColor = Theme.Background,
-            ColumnCount = 3,
-            RowCount = 1,
-            Padding = new Padding(30, 8, 30, 8),
+            ColumnCount = 1,
+            RowCount = 2,
+            Padding = new Padding(30, 4, 30, 4),
             Margin = Padding.Empty
         };
-        footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        footer.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F));
         footer.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+        var options = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            BackColor = Color.Transparent,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty
+        };
 
         _startWithWindows.Text = "Start with Windows";
         _startWithWindows.AutoSize = true;
         _startWithWindows.ForeColor = Theme.Muted;
         _startWithWindows.BackColor = Color.Transparent;
         _startWithWindows.Font = new Font("Segoe UI", 9F);
-        _startWithWindows.Margin = new Padding(0, 8, 22, 0);
+        _startWithWindows.Margin = new Padding(0, 4, 18, 0);
         _startWithWindows.CheckedChanged += StartWithWindows_CheckedChanged;
+        options.Controls.Add(_startWithWindows);
 
         _minimizeToTray.Text = "Minimize to tray";
         _minimizeToTray.AutoSize = true;
         _minimizeToTray.ForeColor = Theme.Muted;
         _minimizeToTray.BackColor = Color.Transparent;
         _minimizeToTray.Font = new Font("Segoe UI", 9F);
-        _minimizeToTray.Margin = new Padding(0, 8, 22, 0);
+        _minimizeToTray.Margin = new Padding(0, 4, 18, 0);
         _minimizeToTray.CheckedChanged += MinimizeToTray_CheckedChanged;
+        options.Controls.Add(_minimizeToTray);
+
+        _deepDisguise.Text = "Deep disguise";
+        _deepDisguise.AutoSize = true;
+        _deepDisguise.ForeColor = Theme.Text;
+        _deepDisguise.BackColor = Color.Transparent;
+        _deepDisguise.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+        _deepDisguise.Margin = new Padding(0, 4, 4, 0);
+        _deepDisguise.CheckedChanged += DeepDisguise_CheckedChanged;
+        _toolTip.SetToolTip(
+            _deepDisguise,
+            "Copies decoys to per-user install paths and launches them as Explorer children. Still detectable.");
+        options.Controls.Add(_deepDisguise);
+
+        var deepInfo = new LinkLabel
+        {
+            Text = "what it does",
+            AutoSize = true,
+            LinkColor = Theme.AccentDark,
+            ActiveLinkColor = Theme.Accent,
+            VisitedLinkColor = Theme.AccentDark,
+            LinkBehavior = LinkBehavior.HoverUnderline,
+            BackColor = Color.Transparent,
+            Margin = new Padding(0, 5, 18, 0)
+        };
+        deepInfo.LinkClicked += (_, _) => ShowDeepDisguiseInfo();
+        options.Controls.Add(deepInfo);
+
+        _pauseOnFullscreen.Text = "Pause in fullscreen";
+        _pauseOnFullscreen.AutoSize = true;
+        _pauseOnFullscreen.ForeColor = Theme.Muted;
+        _pauseOnFullscreen.BackColor = Color.Transparent;
+        _pauseOnFullscreen.Font = new Font("Segoe UI", 9F);
+        _pauseOnFullscreen.Margin = new Padding(0, 4, 18, 0);
+        _pauseOnFullscreen.CheckedChanged += PauseOnFullscreen_CheckedChanged;
+        _toolTip.SetToolTip(
+            _pauseOnFullscreen,
+            "Automatically disarm when a fullscreen app is in the foreground.");
+        options.Controls.Add(_pauseOnFullscreen);
 
         var note = new Label
         {
@@ -431,9 +491,8 @@ internal sealed class MainForm : Form
             Margin = Padding.Empty
         };
 
-        footer.Controls.Add(_startWithWindows, 0, 0);
-        footer.Controls.Add(_minimizeToTray, 1, 0);
-        footer.Controls.Add(note, 2, 0);
+        footer.Controls.Add(options, 0, 0);
+        footer.Controls.Add(note, 0, 1);
         return footer;
     }
 
@@ -508,6 +567,9 @@ internal sealed class MainForm : Form
 
             _minimizeToTray.Checked = _config.MinimizeToTray;
             _startWithWindows.Checked = StartupRegistration.IsEnabled();
+            _deepDisguise.Checked = _config.DeepDisguise;
+            _pauseOnFullscreen.Checked = _config.PauseOnFullscreen;
+            _manager.DeepDisguise = _config.DeepDisguise;
         }
         finally
         {
@@ -668,10 +730,10 @@ internal sealed class MainForm : Form
         _armTitle.Text = _armed ? "Scarecrow armed" : "Scarecrow disarmed";
         _armSubtitle.ForeColor = Theme.Muted;
         _armSubtitle.Text = _armed
-            ? active == 0
-                ? "Waiting for decoys..."
-                : $"{active} decoy{(active == 1 ? "" : "s")} running. Malware sees an analyst's box."
-            : "No decoys are running.";
+            ? ActiveSubtitle(active)
+            : _config.DeepDisguise
+                ? "No decoys are running. Deep disguise on."
+                : "No decoys are running.";
 
         _headerPill.Text = _armed ? "ARMED" : "DISARMED";
         _headerPill.FillColor = _armed ? Theme.Accent : Theme.Muted;
@@ -745,10 +807,16 @@ internal sealed class MainForm : Form
         {
             var active = GetSelectedDecoys().Count(d => _manager.IsRunning(d));
             _armSubtitle.ForeColor = Theme.Muted;
-            _armSubtitle.Text = active == 0
-                ? "Waiting for decoys..."
-                : $"{active} decoy{(active == 1 ? "" : "s")} running. Malware sees an analyst's box.";
+            _armSubtitle.Text = ActiveSubtitle(active);
         }
+    }
+
+    private string ActiveSubtitle(int active)
+    {
+        var suffix = _config.DeepDisguise ? " Deep disguise on." : string.Empty;
+        return active == 0
+            ? "Waiting for decoys..." + suffix
+            : $"{active} decoy{(active == 1 ? "" : "s")} running. Malware sees an analyst's box.{suffix}";
     }
 
     private List<Decoy> GetSelectedDecoys()
@@ -953,6 +1021,113 @@ internal sealed class MainForm : Form
         if (_updatingUi) return;
         _config.MinimizeToTray = _minimizeToTray.Checked;
         _config.Save();
+    }
+
+    private void OnTimerTick(object? sender, EventArgs e)
+    {
+        RefreshStatuses();
+
+        if (!_config.PauseOnFullscreen)
+        {
+            _lastFullscreenWindow = IntPtr.Zero;
+            return;
+        }
+
+        if (FullscreenDetector.TryGetFullscreenApp(out var app, out var window))
+        {
+            if (_armed && window != _lastFullscreenWindow)
+            {
+                _lastFullscreenWindow = window;
+                Disarm();
+                SetSubtitle(
+                    $"Paused for fullscreen app ({app}). Re-arm when you're done.",
+                    Theme.AccentDark);
+                _tray.ShowBalloonTip(
+                    3000,
+                    "CyberScarecrow paused",
+                    $"Fullscreen app detected ({app}). Decoys stopped to avoid anti-cheat false positives.",
+                    ToolTipIcon.Info);
+            }
+        }
+        else
+        {
+            _lastFullscreenWindow = IntPtr.Zero;
+        }
+    }
+
+    private void DeepDisguise_CheckedChanged(object? sender, EventArgs e)
+    {
+        if (_updatingUi) return;
+
+        if (_deepDisguise.Checked && !_config.DeepDisguiseWarningAccepted)
+        {
+            if (!ShowDeepDisguiseWarning())
+            {
+                _updatingUi = true;
+                try
+                {
+                    _deepDisguise.Checked = false;
+                }
+                finally
+                {
+                    _updatingUi = false;
+                }
+                return;
+            }
+
+            _config.DeepDisguiseWarningAccepted = true;
+        }
+
+        _config.DeepDisguise = _deepDisguise.Checked;
+        _config.Save();
+        _manager.DeepDisguise = _deepDisguise.Checked;
+
+        if (_armed)
+        {
+            // Restart the decoys so the new deployment mode takes effect.
+            Disarm();
+            Arm();
+        }
+        else
+        {
+            UpdateArmUi();
+            RefreshStatuses();
+        }
+    }
+
+    private void PauseOnFullscreen_CheckedChanged(object? sender, EventArgs e)
+    {
+        if (_updatingUi) return;
+
+        _config.PauseOnFullscreen = _pauseOnFullscreen.Checked;
+        _config.Save();
+
+        if (!_pauseOnFullscreen.Checked)
+        {
+            _lastFullscreenWindow = IntPtr.Zero;
+        }
+    }
+
+    private bool ShowDeepDisguiseWarning()
+    {
+        var result = MessageBox.Show(
+            this,
+            DeepDisguiseExplanation + "\n\nEnable deep disguise?",
+            "Enable deep disguise?",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button2);
+        return result == DialogResult.Yes;
+    }
+
+    private void ShowDeepDisguiseInfo()
+    {
+        MessageBox.Show(
+            this,
+            DeepDisguiseExplanation,
+            "About deep disguise",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information);
     }
 
     private void ShowFromTray()

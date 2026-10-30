@@ -8,6 +8,9 @@ internal sealed class AppConfig
     public string Preset { get; set; } = nameof(PresetLevel.Medium);
     public List<string> Selected { get; set; } = DecoyCatalog.ForPreset(PresetLevel.Medium).Select(d => d.Id).ToList();
     public bool MinimizeToTray { get; set; }
+    public bool DeepDisguise { get; set; }
+    public bool DeepDisguiseWarningAccepted { get; set; }
+    public bool PauseOnFullscreen { get; set; } = true;
 
     private static string ConfigDirectory => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),

@@ -11,7 +11,7 @@ internal static class Program
     {
         if (args.Any(a => a.Equals("--smoke-test", StringComparison.OrdinalIgnoreCase)))
         {
-            SmokeTest.Run();
+            SmokeTest.Run(args);
             return;
         }
 
