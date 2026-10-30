@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>CyberScarecrow</RootNamespace>
+    <AssemblyName>CyberScarecrow</AssemblyName>
+    <ApplicationIcon>assets\scarecrow.ico</ApplicationIcon>
+    <Version>0.1.0</Version>
+    <Authors>CyberScarecrow</Authors>
+    <Copyright>Copyright (c) 2026 renatti</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Description>A digital scarecrow that makes your desktop look like a malware analyst's lab.</Description>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="host\CyberScarecrow.Host.exe"
+          Condition="Exists('host\CyberScarecrow.Host.exe')"
+          Link="CyberScarecrow.Host.exe"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

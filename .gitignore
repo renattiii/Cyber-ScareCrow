@@ -1,0 +1,16 @@
+# Build output
+bin/
+obj/
+dist/
+src/CyberScarecrow.App/host/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# Local test artifacts
+docs/icon-preview.png
+docs/icon-32.png
+docs/single-32.ico
+docs/single-32-preview.png
